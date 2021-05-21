@@ -1,0 +1,2 @@
+Save Changes:
+sudo /sbin/iptables–save

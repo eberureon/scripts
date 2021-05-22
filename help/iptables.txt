@@ -1,2 +1,13 @@
 Save Changes:
 sudo /sbin/iptables–save
+
+// TODO: Write script to accept and drop ports
+Accept Policy:
+  - lo
+  - 80
+  - 443
+  - 22
+  - 465 (SMTP)
+  - 587 (SMTP)
+  - 993 (IMAP)
+  - 995 (POP3)

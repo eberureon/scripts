@@ -1,0 +1,116 @@
+#!/bin/bash
+
+## -- Examples --
+
+# -- Get all sitemap urls --
+# ./sitemap-urls.sh https://developer.mozilla.org/sitemap.xml
+
+# -- Get only urls that end with `.js` --
+# ./sitemap-urls.sh https://developer.mozilla.org/sitemap.xml | grep -e "\.js$"
+
+# -- Get only urls that do not end with `.js` --
+# ./sitemap-urls.sh https://developer.mozilla.org/sitemap.xml | grep -v -e "\.js$"
+
+# -- Get urls and write them to file --
+# ./sitemap-urls.sh https://developer.mozilla.org/sitemap.xml > mdn.urls.txt
+
+# -- Check pages availability --
+# ./sitemap-urls.sh https://developer.mozilla.org/sitemap.xml | xargs -I{} sh -c '
+#   RED="\033[0;31m"
+#   GREEN="\033[0;32m"
+#   NO_COLOR="\033[0m"
+#
+#   if curl --output /dev/null --silent --head --fail "$1"; then
+#     echo "[${GREEN}OK${NO_COLOR}] $1"
+#   else
+#     echo "[${RED}BAD${NO_COLOR}] $1"
+#   fi
+# ' -- {}
+
+## -- Examples --
+
+if ! command -v xpath &> /dev/null; then
+  echo "Error: xpath command not found. Please install it and try again."
+  exit 1
+fi
+
+if ! command -v curl &> /dev/null; then
+  echo "Error: curl command not found. Please install it and try again."
+  exit 1
+fi
+
+if [[ $# -eq 0 ]]; then
+  echo "Error: no argument provided."
+  echo "Usage: parse_sitemap_xml <sitemap_url>"
+  exit 1
+fi
+
+
+# fetch_xml - Fetches an XML file from a URL, optionally decompressing it if it is gzipped
+#
+# Usage:
+#   fetch_xml "url"
+#
+# Arguments:
+#   $1 - The URL of the XML file to fetch
+fetch_xml() {
+  local url=$1
+  local filename=$(basename $url)
+
+  if [[ $filename == *.gz ]]
+  then
+    curl -sL $url | gunzip -c
+  else
+    curl -sL $url
+  fi
+}
+
+
+# decode_xml_entities - Decodes HTML entities in an XML or HTML string
+#
+# Usage:
+#   decode_xml_entities "input_string"
+#   cat file.xml | decode_xml_entities
+#
+# Arguments:
+#   $1 - The input XML or HTML string to decode
+#
+# Output:
+#   The decoded XML or HTML string, printed to standard output
+decode_xml_entities() {
+  sed 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&apos;/\x27/g; s/&amp;/\&/g;'
+}
+
+
+# parse_sitemap_xml - Recursively parses a sitemap XML file and outputs the URLs
+#
+# Usage:
+#   parse_sitemap_xml "sitemap_url"
+#
+# Arguments:
+#   $1 - The URL of the sitemap XML file to parse
+#
+# Output:
+#   The URLs of all pages contained within the sitemap, printed to standard output
+parse_sitemap() {
+  local xml=$(fetch_xml $1)
+
+  # Skip if fetching the XML file failed
+  if [ $? -ne 0 ]; then
+    return 0
+  fi
+
+  local sub_sitemaps=($(echo "$xml" | xpath -q -e "//sitemap/loc/text()" 2>/dev/null | decode_xml_entities))
+  local pages=($(echo "$xml" | xpath -q -e "//urlset/url/loc/text()" 2>/dev/null | decode_xml_entities))
+
+  if [ ${#pages[@]} -gt 0 ]; then
+    printf '%s\n' "${pages[@]}" >&1
+  fi
+
+  for xml_url in "${sub_sitemaps[@]}"
+  do
+    parse_sitemap $xml_url
+  done
+}
+
+parse_sitemap $1

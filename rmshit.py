@@ -3,64 +3,64 @@
 # Credits: https://github.com/lahwaacz
 
 import os
-import sys
 import shutil
 
 
 shittyfiles = [
-    '~/.adobe',              # Flash crap
-    '~/.macromedia',         # Flash crap
-    '~/.recently-used',
-    '~/.local/share/recently-used.xbel',
-    '~/Desktop',             # Firefox creates this
-    '~/.thumbnails',
-    '~/.gconfd',
-    '~/.gconf',
-    '~/.local/share/gegl-0.2',
-    '~/.FRD/log/app.log',   # FRD
-    '~/.FRD/links.txt',     # FRD
-    '~/.objectdb',          # FRD
-    '~/.gstreamer-0.10',
-    '~/.pulse',
-    '~/.esd_auth',
-    '~/.config/enchant',
-    '~/.spicec',            # contains only log file; unconfigurable
-    '~/.dropbox-dist',
-    '~/.parallel',
-    '~/.dbus',
-    '~/ca2',                # WTF?
-    '~/ca2~',               # WTF?
-    '~/.distlib/',          # contains another empty dir, don't know which software creates it
-    '~/.bazaar/',           # bzr insists on creating files holding default values
-    '~/.bzr.log',
-    '~/.nv/',
-    '~/.viminfo',           # configured to be moved to ~/.cache/vim/viminfo, but it is still sometimes created...
-    '~/.npm/',              # npm cache
-    '~/.java/',
-    '~/.oracle_jre_usage/',
-    '~/.jssc/',
-    '~/.tox/',              # cache directory for tox
-    '~/.pylint.d/',
-    '~/.qute_test/',
-    '~/.QtWebEngineProcess/',
-    '~/.qutebrowser/',      # created empty, only with webengine backend
-    '~/.asy/',
-    '~/.cmake/',
-    '~/.gnome/',
-    '~/unison.log',
-    '~/.texlive/',
-    '~/.w3m/',
-    '~/.subversion/',
-    '~/nvvp_workspace/',    # created empty even when the path is set differently in nvvp
-    '~/.ansible/',
-    '~/.fltk/',
-    '~/.vnc/',
+    "~/.adobe",  # Flash crap
+    "~/.macromedia",  # Flash crap
+    "~/.recently-used",
+    "~/.local/share/recently-used.xbel",
+    "~/Desktop",  # Firefox creates this
+    "~/.thumbnails",
+    "~/.gconfd",
+    "~/.gconf",
+    "~/.local/share/gegl-0.2",
+    "~/.FRD/log/app.log",  # FRD
+    "~/.FRD/links.txt",  # FRD
+    "~/.objectdb",  # FRD
+    "~/.gstreamer-0.10",
+    "~/.pulse",
+    "~/.esd_auth",
+    "~/.config/enchant",
+    "~/.spicec",  # contains only log file; unconfigurable
+    "~/.dropbox-dist",
+    "~/.parallel",
+    "~/.dbus",
+    "~/ca2",  # WTF?
+    "~/ca2~",  # WTF?
+    "~/.distlib/",  # contains another empty dir, don't know which software creates it
+    "~/.bazaar/",  # bzr insists on creating files holding default values
+    "~/.bzr.log",
+    "~/.nv/",
+    # configured to be moved to ~/.cache/vim/viminfo, but it is still sometimes created...
+    "~/.viminfo",
+    "~/.npm/",  # npm cache
+    "~/.java/",
+    "~/.oracle_jre_usage/",
+    "~/.jssc/",
+    "~/.tox/",  # cache directory for tox
+    "~/.pylint.d/",
+    "~/.qute_test/",
+    "~/.QtWebEngineProcess/",
+    "~/.qutebrowser/",  # created empty, only with webengine backend
+    "~/.asy/",
+    "~/.cmake/",
+    "~/.gnome/",
+    "~/unison.log",
+    "~/.texlive/",
+    "~/.w3m/",
+    "~/.subversion/",
+    "~/nvvp_workspace/",  # created empty even when the path is set differently in nvvp
+    "~/.ansible/",
+    "~/.fltk/",
+    "~/.vnc/",
 ]
 
 
 def yesno(question, default="n"):
-    """ Asks the user for YES or NO, always case insensitive.
-        Returns True for YES and False for NO.
+    """Asks the user for YES or NO, always case insensitive.
+    Returns True for YES and False for NO.
     """
     prompt = "%s (y/[n]) " % question
 
@@ -98,6 +98,5 @@ def rmshit():
         print("No file removed")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     rmshit()
-

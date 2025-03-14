@@ -55,6 +55,7 @@ shittyfiles = [
     "~/.ansible/",
     "~/.fltk/",
     "~/.vnc/",
+    "~/.local/share/Trash/",  # VSCode puts deleted files here
 ]
 
 

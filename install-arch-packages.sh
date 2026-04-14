@@ -46,6 +46,7 @@ pacman_packages=(
   npm
   steam
   ttf-opensans
+  vim
   zoxide
   zsh
   zsh-completions
@@ -53,7 +54,7 @@ pacman_packages=(
 
 # List of packages from the Arch User Repository (AUR)
 aur_packages=(
-  ausweisapp2
+  # ausweisapp2
   biome
   ghostty
   intellij-idea-ultimate-edition
@@ -67,7 +68,7 @@ aur_packages=(
   yubico-authenticator-bin
   zen-browser-bin
   zoom
-  zsh-theme-powerlevel10k-git
+  zsh-theme-powerlevel10k
 )
 
 # --- YAY INSTALLATION FUNCTION ---
@@ -126,10 +127,12 @@ user_home=$(getent passwd "$(logname)" | cut -d: -f6)
 # Define an array of source paths and a corresponding array of target links.
 # The order must match.
 source_paths=(
-  "$user_home/workspace/files"
+  "$user_home/Documents/workspace/dotfiles/linux/.config/ghostty",
+  "$user_home/Documents/workspace/dotfiles/.config/lazyvim"
 )
 target_links=(
-  "$user_home/.config/files"
+  "$user_home/.config/ghostty",
+  "$user_home/.config/nvim"
 )
 
 echo "--- Creating symlinks for dotfiles ---"

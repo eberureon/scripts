@@ -24,46 +24,54 @@ button.addEventListener("click", async () => {
         return { start: header + 1, end };
       };
 
-      const today = callout(/^>\s*\[!todo\][+-]?\s*TODOs Today/i);
-      const tomorrow = callout(/^>\s*\[!abstract\][+-]?\s*TODOs (Tomorrow|Next Day)/i);
-      if (!today || !tomorrow) {
-        result = "Move Open Tasks: could not find both callouts";
+      const pairs = [
+        {
+          source: callout(/^>\s*\[!todo\][+-]?\s*TODOs Today/i),
+          destination: callout(/^>\s*\[!abstract\][+-]?\s*TODOs (Tomorrow|Next Day)/i),
+          placeholder: /Add tasks (that need to be tackled tomorrow|for the next working day) here/,
+        },
+        {
+          source: callout(/^>\s*\[!note\][+-]?\s*General Notes/i),
+          destination: callout(/^>\s*\[!abstract\][+-]?\s*General Notes Next Day/i),
+          placeholder: /Add general notes for the next working day here/,
+        },
+      ];
+      if (pairs.some((pair) => !pair.source || !pair.destination)) {
+        result = "Move Open Tasks: could not find all callouts";
         return content;
       }
 
       const indent = (line) => line.replace(/^>\s?/, "").match(/^[ \t]*/)[0].length;
       const isTask = (line) => /^>\s*[-*]\s*\[[ xX]\]/.test(line);
       const isOpen = (line) => /^>\s*[-*]\s*\[ \]/.test(line);
-      const carried = [];
-      let keep = false;
-      let taskIndent = 0;
-
-      for (const line of lines.slice(today.start, today.end)) {
-        if (isTask(line)) {
-          keep = isOpen(line);
-          taskIndent = indent(line);
-          if (keep) carried.push(line);
-          continue;
+      let copied = 0;
+      for (const pair of pairs.sort((a, b) => b.destination.start - a.destination.start)) {
+        const carried = [];
+        let keep = false;
+        let taskIndent = 0;
+        for (const line of lines.slice(pair.source.start, pair.source.end)) {
+          if (isTask(line)) {
+            keep = isOpen(line);
+            taskIndent = indent(line);
+            if (keep) carried.push(line);
+            continue;
+          }
+          if (keep && indent(line) > taskIndent) carried.push(line);
+          else keep = false;
         }
-        if (keep && indent(line) > taskIndent) carried.push(line);
-        else keep = false;
+        const existing = lines.slice(pair.destination.start, pair.destination.end)
+          .filter((line) => !pair.placeholder.test(line));
+        const fresh = carried.filter((line) => !existing.includes(line));
+        if (fresh.length) {
+          lines.splice(pair.destination.start, pair.destination.end - pair.destination.start, ...existing, ...fresh);
+          copied += fresh.length;
+        }
       }
-
-      if (!carried.length) {
-        result = "Move Open Tasks: no open TODOs today";
+      if (!copied) {
+        result = "Move Open Tasks: no new open items to copy";
         return content;
       }
-
-      const placeholder = /Add tasks (that need to be tackled tomorrow|for the next working day) here/;
-      const existing = lines.slice(tomorrow.start, tomorrow.end).filter((line) => !placeholder.test(line));
-      const fresh = carried.filter((line) => !existing.includes(line));
-      if (!fresh.length) {
-        result = "Move Open Tasks: everything is already in Next Day";
-        return content;
-      }
-
-      lines.splice(tomorrow.start, tomorrow.end - tomorrow.start, ...existing, ...fresh);
-      result = `Move Open Tasks: ${fresh.length} line${fresh.length === 1 ? "" : "s"} copied to Next Day`;
+      result = `Move Open Tasks: ${copied} line${copied === 1 ? "" : "s"} copied to Next Day`;
       return lines.join("\n");
     });
     notify(result);

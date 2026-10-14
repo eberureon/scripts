@@ -10,14 +10,15 @@ cssclasses:
   - daily-note
 ---
 <%*
-/* Carry over "TODOs Next Day" from the most recent earlier daily note (not
-   necessarily yesterday - skips weekends/holidays) into "TODOs Today". */
+/* Carry over open TODOs and General Notes from the most recent earlier daily
+   note (not necessarily yesterday - skips weekends/holidays). */
 const dailies = tp.file.folder(true);
 const prev = app.vault.getMarkdownFiles()
   .filter(f => f.path.startsWith(dailies + "/") && /^\d{4}-\d{2}-\d{2}$/.test(f.basename) && f.basename < tp.file.title)
   .sort((a, b) => a.basename.localeCompare(b.basename))
   .pop();
 let todosToday = "> - [ ] Add task you are tackling today.";
+let generalNotesToday = "> - [ ] Add a general task.";
 // "Yesterday" link: the previous existing note, falling back to the calendar day
 const yesterday = prev ? prev.basename : tp.date.now("YYYY-MM-DD", -1, tp.file.title, "YYYY-MM-DD");
 if (prev) {
@@ -28,6 +29,13 @@ if (prev) {
     for (let i = start + 1; i < lines.length && lines[i].startsWith(">"); i++) body.push(lines[i]);
     const real = body.filter(l => !/Add tasks (that need to be tackled tomorrow|for the next working day) here/.test(l) && l.replace(/^>\s*/, "").trim() !== "");
     if (real.length) todosToday = real.join("\n");
+  }
+  const notesStart = lines.findIndex(l => /^>\s*\[!abstract\][+-]?\s*General Tasks Next Day/i.test(l));
+  if (notesStart !== -1) {
+    const body = [];
+    for (let i = notesStart + 1; i < lines.length && lines[i].startsWith(">"); i++) body.push(lines[i]);
+    const real = body.filter(l => !/Add general tasks for the next working day here/.test(l) && l.replace(/^>\s*/, "").trim() !== "");
+    if (real.length) generalNotesToday = real.join("\n");
   }
 }
 -%>
@@ -55,11 +63,17 @@ if (prev) {
 > [!abstract]+ TODOs Next Day
 > Add tasks for the next working day here.
 
+> [!note]+ General TODOs
+<% generalNotesToday %>
+
+> [!abstract]+ General TODOs Next Day
+> Add general tasks for the next working day here.
+
 ```dataviewjs
 await dv.view("_globals/views/task-rollover");
 ```
 
-## General Notes
+## Daily Notes
 ---
 
 **TODO**

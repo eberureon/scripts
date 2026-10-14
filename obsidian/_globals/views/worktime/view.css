@@ -1,0 +1,97 @@
+/* Work Time widget rendered by _globals/views/worktime/view.js. */
+.callout[data-callout="clock"],
+.callout[data-callout="clock"] .callout-title,
+.callout[data-callout="clock"] .callout-content {
+  background: transparent !important;
+  text-align: center !important;
+  --callout-icon: lucide-clock;
+}
+
+.worktime {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+  color: var(--text-normal);
+}
+
+.worktime-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55em;
+  width: 100%;
+}
+
+.worktime-times {
+  min-height: 2em;
+}
+
+.worktime-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7.1em;
+  height: 1.65em;
+  padding: 0.15em 0.7em;
+  border: 1px solid #59616b;
+  border-radius: 0.7em;
+  color: var(--text-normal);
+  font-size: 0.78em;
+}
+
+.worktime-chip.is-total,
+.worktime-chip.is-running {
+  border-color: #a72bd0;
+  background: #a72bd0;
+  color: #fff;
+  font-weight: 600;
+}
+
+.worktime-chip.is-in {
+  border-color: #35e48d;
+  color: #35e48d;
+}
+
+.worktime-chip.is-out {
+  border-color: #ff5360;
+  color: #ff5360;
+}
+
+.worktime-chip.is-empty {
+  color: var(--text-faint);
+}
+
+.worktime-actions {
+  gap: 0.55em;
+}
+
+.worktime-btn {
+  min-width: 7.1em;
+  height: 2.15em;
+  border: 1px solid #41474e;
+  border-radius: 0.35em;
+  font-size: 0.78em;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.worktime-btn.is-in {
+  background-color: #44e58b;
+  color: #363b41;
+}
+
+.worktime-btn.is-in:hover {
+  background-color: #1dd16c;
+}
+
+.worktime-btn.is-out {
+  background-color: #ff5360;
+  color: #363b41;
+}
+
+.worktime-btn.is-out:hover {
+  background-color: #ff3141;
+}

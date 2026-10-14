@@ -1,0 +1,90 @@
+/* Tables rendered by the work-dashboard view (note has cssclasses: work-dashboard) */
+.work-dashboard .dataview.table-view-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.4em 0;
+}
+.work-dashboard .dataview.table-view-table th,
+.work-dashboard .dataview.table-view-table td {
+  border: 1px solid var(--text-normal);
+  padding: 0.4em 0.65em;
+  vertical-align: top;
+}
+.work-dashboard .dataview.table-view-table th {
+  background: var(--background-modifier-hover);
+  font-weight: 600;
+}
+/* everything but the task text: single line, centred */
+.work-dashboard .dataview.table-view-table th:not(:first-child),
+.work-dashboard .dataview.table-view-table td:not(:first-child) {
+  white-space: nowrap;
+  text-align: center;
+}
+.work-dashboard .dataview.table-view-table tbody tr:hover td {
+  background: var(--background-modifier-hover);
+}
+
+/* "Hours this week" section: one bar per day, scaled to the longest day. */
+.wkhours {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.wkhours-empty {
+  color: var(--text-faint);
+  font-style: italic;
+}
+.wkhours-row {
+  display: grid;
+  grid-template-columns: 2.6em 1fr 6.2em;
+  align-items: center;
+  gap: 0.6em;
+}
+.wkhours-day {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+.wkhours-bar {
+  height: 0.62em;
+  border-radius: var(--radius-l);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.wkhours-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--interactive-accent);
+  transition: width 0.3s ease;
+}
+/* the day still running reads as provisional */
+.wkhours-row.is-running .wkhours-fill {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--interactive-accent) 0 6px,
+    var(--background-modifier-border) 6px 12px
+  );
+}
+.wkhours-row.is-running .wkhours-val { color: var(--text-muted); }
+.wkhours-val {
+  text-align: right;
+  font-size: var(--font-ui-small);
+}
+.wkhours-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  margin-top: 0.35em;
+  padding-top: 0.45em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.wkhours-total {
+  font-size: 1.35em;
+  font-weight: 650;
+  color: var(--text-normal);
+}
+.wkhours-meta {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}

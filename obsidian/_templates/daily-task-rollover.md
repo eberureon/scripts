@@ -21,9 +21,9 @@ const pairs = [
     placeholder: /Add tasks (that need to be tackled tomorrow|for the next working day) here/,
   },
   {
-    source: callout(/^>\s*\[!note\][+-]?\s*General Notes/i),
-    destination: callout(/^>\s*\[!abstract\][+-]?\s*General Notes Next Day/i),
-    placeholder: /Add general notes for the next working day here/,
+    source: callout(/^>\s*\[!note\][+-]?\s*General TODOs/i),
+    destination: callout(/^>\s*\[!abstract\][+-]?\s*General TODOs Next Day/i),
+    placeholder: /Add general tasks for the next working day here/i,
   },
 ];
 if (pairs.some(pair => !pair.source || !pair.destination)) {

@@ -10,7 +10,7 @@ cssclasses:
   - daily-note
 ---
 <%*
-/* Carry over open TODOs and General Notes from the most recent earlier daily
+/* Carry over open TODOs and General TODOs from the most recent earlier daily
    note (not necessarily yesterday - skips weekends/holidays). */
 const dailies = tp.file.folder(true);
 const prev = app.vault.getMarkdownFiles()
@@ -30,7 +30,7 @@ if (prev) {
     const real = body.filter(l => !/Add tasks (that need to be tackled tomorrow|for the next working day) here/.test(l) && l.replace(/^>\s*/, "").trim() !== "");
     if (real.length) todosToday = real.join("\n");
   }
-  const notesStart = lines.findIndex(l => /^>\s*\[!abstract\][+-]?\s*General Tasks Next Day/i.test(l));
+  const notesStart = lines.findIndex(l => /^>\s*\[!abstract\][+-]?\s*General TODOs Next Day$/i.test(l));
   if (notesStart !== -1) {
     const body = [];
     for (let i = notesStart + 1; i < lines.length && lines[i].startsWith(">"); i++) body.push(lines[i]);

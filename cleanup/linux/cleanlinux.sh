@@ -29,6 +29,7 @@ Options:
     --docker            Also prune Docker and Podman: stopped containers,
                         unused networks, dangling images and build cache.
                         Data inside stopped containers is lost.
+    -a, --all           Same as --autoremove --docker
 
 Arguments:
     DAYS                Number of days of cache to keep (default: 7)
@@ -52,6 +53,10 @@ while [[ "$#" -gt 0 ]]; do
             AUTOREMOVE=true
             ;;
         --docker)
+            DOCKER=true
+            ;;
+        -a|--all)
+            AUTOREMOVE=true
             DOCKER=true
             ;;
         -*)

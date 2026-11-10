@@ -7,8 +7,11 @@ set -e
 
 # Default configuration
 DRY_RUN=false
+VERBOSE=false
+ASSUME_YES=false
 HISTORY=false
 BROWSERS=false
+TRASH=false
 
 usage() {
     cat <<EOF
@@ -21,22 +24,29 @@ everything in the user cache folder (thumbnails included; tools that keep
 downloads there fetch them again), your own temp files, the system journal,
 rotated logs, crash dumps, print job copies (pending print jobs are
 cancelled), DNS cache, clipboard and clipboard history, and app web caches.
-Best run with most apps closed.
+Files changed in the last 10 minutes are left alone so that running apps
+keep working; close your apps first for a complete result.
 
 Options:
     -h, --help          Show this help message
     -d, --dry-run       Show what would be deleted without deleting
+    -v, --verbose       List every deleted file instead of a count
+    -y, --yes           Do not ask for confirmation
     -H, --history       Also remove history you would notice losing: shell,
                         editor and REPL history, recent file lists, desktop
-                        usage statistics, saved sessions and notification
-                        history.
-    -b, --browsers      Also remove browser history, cookies, sessions and
-                        caches (Firefox, LibreWolf, Chrome, Chromium, Brave,
-                        Edge, Vivaldi; native, Flatpak and snap installs).
-                        This signs you out of websites and closes open tabs.
-                        Bookmarks and saved passwords are kept. Running
-                        browsers are skipped.
-    -a, --all           Same as --history --browsers
+                        usage statistics, file index and file manager
+                        metadata, saved sessions, notification history and
+                        the system login records.
+    -b, --browsers      Also remove browser history, cookies, site storage,
+                        sessions, form autofill and caches (Firefox,
+                        LibreWolf, Zen, Chrome, Chromium, Brave, Edge,
+                        Vivaldi; native, Flatpak and snap installs). This
+                        signs you out of websites, closes open tabs and
+                        resets custom search engines in Chromium browsers.
+                        Bookmarks, saved passwords and extensions are kept.
+                        Running browsers are skipped.
+    -t, --trash         Also empty the Trash completely
+    -a, --all           Same as --history --browsers --trash
 EOF
 }
 
@@ -50,19 +60,29 @@ while [[ "$#" -gt 0 ]]; do
         -d|--dry-run)
             DRY_RUN=true
             ;;
+        -v|--verbose)
+            VERBOSE=true
+            ;;
+        -y|--yes)
+            ASSUME_YES=true
+            ;;
         -H|--history)
             HISTORY=true
             ;;
         -b|--browsers)
             BROWSERS=true
             ;;
+        -t|--trash)
+            TRASH=true
+            ;;
         -a|--all)
             HISTORY=true
             BROWSERS=true
+            TRASH=true
             ;;
         *)
-            echo "Error: unknown argument $1"
-            usage
+            echo "Error: unknown argument $1" >&2
+            usage >&2
             exit 1
             ;;
     esac
@@ -79,75 +99,22 @@ while [ -L "$script_path" ]; do
         *) script_path="$(dirname "$script_path")/$link_target" ;;
     esac
 done
-# shellcheck source=cleanlinux-lib.sh
-source "$(dirname "$script_path")/cleanlinux-lib.sh"
+# shellcheck source=../lib.sh
+source "$(dirname "$script_path")/../lib.sh"
 
-require_linux
+require_os Linux
 
-# Usage: clean_chromium <display name> <process regex> <profile root> <cache dir>
-clean_chromium() {
-    local name=$1 proc=$2 root=$3 cache=$4 profile
-    if [ ! -d "$root" ]; then
-        return 0
-    fi
-    if app_running "$name" "$proc"; then
-        return 0
-    fi
-    echo "Cleaning $name ($root)..."
-    for profile in "$root"/Default "$root"/Profile\ *; do
-        if [ ! -d "$profile" ]; then
-            continue
-        fi
-        remove_path "$profile"/History* \
-                    "$profile"/Cookies* \
-                    "$profile"/Network/Cookies* \
-                    "$profile"/Top\ Sites* \
-                    "$profile"/Visited\ Links \
-                    "$profile"/Network\ Action\ Predictor* \
-                    "$profile"/Shortcuts* \
-                    "$profile"/Favicons* \
-                    "$profile"/Sessions \
-                    "$profile"/Cache \
-                    "$profile"/Code\ Cache \
-                    "$profile"/GPUCache \
-                    "$profile"/Service\ Worker
-    done
-    remove_path "$cache"
-}
-
-# Usage: clean_firefox <display name> <process regex> <profile root> <cache dir>
-clean_firefox() {
-    local name=$1 proc=$2 root=$3 cache=$4 profile
-    if [ ! -d "$root" ]; then
-        return 0
-    fi
-    if app_running "$name" "$proc"; then
-        return 0
-    fi
-    echo "Cleaning $name ($root)..."
-    for profile in "$root"/*/; do
-        profile=${profile%/}
-        # places.sqlite holds bookmarks as well as history, so the history
-        # rows are deleted instead of the file.
-        if [ ! -f "$profile/places.sqlite" ]; then
-            continue
-        fi
-        if have sqlite3; then
-            run_cmd sqlite3 "$profile/places.sqlite" \
-                'DELETE FROM moz_historyvisits; DELETE FROM moz_inputhistory; DELETE FROM moz_places WHERE id NOT IN (SELECT fk FROM moz_bookmarks WHERE fk IS NOT NULL); VACUUM;'
-        else
-            echo "sqlite3 is not installed: history in $profile is kept."
-        fi
-        remove_path "$profile"/cookies.sqlite* \
-                    "$profile"/favicons.sqlite* \
-                    "$profile/formhistory.sqlite" \
-                    "$profile"/sessionstore* \
-                    "$profile/cache2"
-    done
-    remove_path "$cache"
-}
+selected="caches, temp files, logs, clipboard"
+if [ "$HISTORY" = true ]; then selected="$selected, history"; fi
+if [ "$BROWSERS" = true ]; then selected="$selected, browser data"; fi
+if [ "$TRASH" = true ]; then selected="$selected, Trash"; fi
+confirm "This permanently deletes: $selected. Continue?"
 
 start_run
+
+# Files a running app has just written are left alone.
+RECENT=(-mmin +10)
+uid=$(id -u)
 
 # ---------------------------------------------------------------------------
 # Always: traces that daily work does not depend on
@@ -156,16 +123,16 @@ echo "Starting privacy cleanup..."
 
 # Regular files only, so sockets of running apps survive.
 echo "Clearing user cache (thumbnails included)..."
-find_clean "$CACHE_DIR" -type f
+clean_tree "$CACHE_DIR" "${RECENT[@]}"
 remove_path "$HOME/.thumbnails"
 for app_cache in "$HOME"/.var/app/*/cache "$HOME"/snap/*/common/.cache; do
-    find_clean "$app_cache" -type f
+    clean_tree "$app_cache" "${RECENT[@]}"
 done
 
 echo "Clearing your own temp files..."
 # The X server lock files must stay while the session runs.
-find_clean /tmp -xdev -type f -user "$(id -u)" ! -name ".X*-lock"
-find_clean /var/tmp -xdev -type f -user "$(id -u)"
+clean_tree /tmp -xdev -user "$uid" "${RECENT[@]}" ! -name ".X*-lock"
+clean_tree /var/tmp -xdev -user "$uid" "${RECENT[@]}"
 
 echo "Clearing logs and crash dumps..."
 if have journalctl; then
@@ -228,7 +195,7 @@ if [ "$HISTORY" = true ]; then
 
     echo "Removing shell, editor and REPL history..."
     zsh_dir="${ZDOTDIR:-$HOME}"
-    remove_path "${HISTFILE:-}" \
+    remove_path "${HISTFILE:-}" "$(zsh_histfile)" \
                 "$zsh_dir/.zsh_history" "$zsh_dir/.zhistory" "$zsh_dir/.histfile" \
                 "$DATA_DIR/zsh/history" "$STATE_DIR/zsh/history" \
                 "$HOME/.bash_history" "$STATE_DIR/bash/history" \
@@ -240,14 +207,23 @@ if [ "$HISTORY" = true ]; then
                 "$HOME/.python_history" "$HOME/.node_repl_history" \
                 "$HOME/.psql_history" "$HOME/.mysql_history" \
                 "$HOME/.sqlite_history" "$HOME/.wget-hsts"
-    echo "Note: shells that are still open write their history back when they exit."
 
     echo "Clearing recent file lists and desktop usage statistics..."
     remove_path "$DATA_DIR/recently-used.xbel" \
                 "$HOME/.recently-used" \
                 "$DATA_DIR"/RecentDocuments/* \
                 "$DATA_DIR"/kactivitymanagerd/resources/database* \
-                "$DATA_DIR/zeitgeist"
+                "$DATA_DIR/zeitgeist" \
+                "$DATA_DIR/gvfs-metadata"
+
+    # The KDE file index; it is rebuilt from the files that still exist.
+    if have balooctl6; then
+        run_cmd balooctl6 purge
+    elif have balooctl; then
+        run_cmd balooctl purge
+    else
+        remove_path "$DATA_DIR/baloo"
+    fi
 
     echo "Clearing saved sessions..."
     remove_path "$CONFIG_DIR"/session/*
@@ -259,10 +235,17 @@ if [ "$HISTORY" = true ]; then
     if have swaync-client; then
         run_cmd swaync-client --close-all
     fi
+
+    echo "Clearing login records..."
+    for login_record in /var/log/wtmp /var/log/btmp /var/log/lastlog; do
+        if [ -e "$login_record" ]; then
+            run_root truncate -s 0 "$login_record"
+        fi
+    done
 fi
 
 # ---------------------------------------------------------------------------
-# --browsers: history, cookies, sessions and caches
+# --browsers: history, cookies, site storage, sessions and caches
 # ---------------------------------------------------------------------------
 if [ "$BROWSERS" = true ]; then
     echo -e "\nBrowser cleanup..."
@@ -278,6 +261,10 @@ if [ "$BROWSERS" = true ]; then
         "$HOME/snap/firefox/common/.mozilla/firefox" "$HOME/snap/firefox/common/.cache/mozilla"
     clean_firefox "LibreWolf" "librewolf" \
         "$HOME/.librewolf" "$CACHE_DIR/librewolf"
+    clean_firefox "Zen" "zen|zen-bin" \
+        "$HOME/.zen" "$CACHE_DIR/zen"
+    clean_firefox "Zen (Flatpak)" "zen|zen-bin" \
+        "$HOME/.var/app/app.zen_browser.zen/.zen" "$HOME/.var/app/app.zen_browser.zen/cache/zen"
 
     chromium_proc='chromium|chromium-browse|chromium-browser'
     clean_chromium "Google Chrome" "chrome" \
@@ -300,6 +287,18 @@ if [ "$BROWSERS" = true ]; then
         "$CONFIG_DIR/vivaldi" "$CACHE_DIR/vivaldi"
 fi
 
+# ---------------------------------------------------------------------------
+# --trash: empty the Trash completely
+# ---------------------------------------------------------------------------
+if [ "$TRASH" = true ]; then
+    echo -e "\nEmptying Trash..."
+    for trash in "$DATA_DIR/Trash" /run/media/"$USER"/*/.Trash-"$uid" /media/"$USER"/*/.Trash-"$uid" /mnt/*/.Trash-"$uid"; do
+        empty_dir "$trash/files"
+        empty_dir "$trash/info"
+        empty_dir "$trash/expunged"
+    done
+fi
+
 if [ "$DRY_RUN" = true ]; then
     echo -e "\nDry run complete, nothing was deleted."
 else
@@ -307,12 +306,23 @@ else
 fi
 
 # Things the script cannot fix, only point out.
-if have snapper || have timeshift || [ "$(findmnt -no FSTYPE / 2>/dev/null)" = "btrfs" ] || [ "$(findmnt -no FSTYPE / 2>/dev/null)" = "zfs" ]; then
+if [ "$HISTORY" = true ]; then
+    echo "Note: every shell that is still open, this one included, writes its history"
+    echo "      back when it closes. Close each with:  unset HISTFILE; exit"
+fi
+
+if [ "$TRASH" != true ]; then
+    echo "Note: the Trash was not emptied (use --trash)."
+fi
+
+root_fs=$(findmnt -no FSTYPE / 2>/dev/null || true)
+if have snapper || have timeshift || [ "$root_fs" = "btrfs" ] || [ "$root_fs" = "zfs" ]; then
     echo "Note: filesystem snapshots (snapper, Timeshift, btrfs, zfs) still contain the"
     echo "      deleted files until the snapshots themselves are removed."
 fi
 
 if ! lsblk -no TYPE 2>/dev/null | grep -q crypt; then
-    echo "Warning: no encrypted (LUKS) volume found. Deleted files cannot be securely"
-    echo "         erased on an SSD; only disk encryption keeps them unreadable."
+    echo "Note: no LUKS-encrypted volume was found (fscrypt and ZFS encryption are not"
+    echo "      detected). Without disk encryption, deleted files cannot be made"
+    echo "      unreadable on an SSD, and swap or hibernation space can hold copies."
 fi

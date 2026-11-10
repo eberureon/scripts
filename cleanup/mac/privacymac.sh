@@ -7,8 +7,11 @@ set -e
 
 # Default configuration
 DRY_RUN=false
+VERBOSE=false
+ASSUME_YES=false
 HISTORY=false
 BROWSERS=false
+TRASH=false
 
 usage() {
     cat <<EOF
@@ -19,21 +22,27 @@ Without options only traces that daily work does not depend on are removed:
 user caches and logs, per-user temp files, QuickLook thumbnails, the download
 log, system logs, print job copies (pending print jobs are cancelled), DNS
 cache, clipboard, app web caches and local Time Machine snapshots.
-Best run with most apps closed.
+Files changed in the last 10 minutes are left alone so that running apps
+keep working; close your apps first for a complete result.
 
 Options:
     -h, --help          Show this help message
     -d, --dry-run       Show what would be deleted without deleting
+    -v, --verbose       List every deleted file instead of a count
+    -y, --yes           Do not ask for confirmation
     -H, --history       Also remove history you would notice losing: shell and
                         REPL history, "Open Recent" lists, Finder recent
                         folders, saved window state (apps stop reopening their
                         windows) and Notification Center history.
-    -b, --browsers      Also remove browser history, cookies, sessions and
-                        caches (Safari, Chrome, Brave, Edge, Arc, Vivaldi,
-                        Firefox). This signs you out of websites and closes
-                        open tabs. Bookmarks and saved passwords are kept.
+    -b, --browsers      Also remove browser history, cookies, site storage,
+                        sessions, form autofill and caches (Safari, Chrome,
+                        Brave, Edge, Arc, Vivaldi, Firefox, LibreWolf, Zen).
+                        This signs you out of websites, closes open tabs and
+                        resets custom search engines in Chromium browsers.
+                        Bookmarks, saved passwords and extensions are kept.
                         Running browsers are skipped.
-    -a, --all           Same as --history --browsers
+    -t, --trash         Also empty the Trash completely
+    -a, --all           Same as --history --browsers --trash
 EOF
 }
 
@@ -47,19 +56,29 @@ while [[ "$#" -gt 0 ]]; do
         -d|--dry-run)
             DRY_RUN=true
             ;;
+        -v|--verbose)
+            VERBOSE=true
+            ;;
+        -y|--yes)
+            ASSUME_YES=true
+            ;;
         -H|--history)
             HISTORY=true
             ;;
         -b|--browsers)
             BROWSERS=true
             ;;
+        -t|--trash)
+            TRASH=true
+            ;;
         -a|--all)
             HISTORY=true
             BROWSERS=true
+            TRASH=true
             ;;
         *)
-            echo "Error: unknown argument $1"
-            usage
+            echo "Error: unknown argument $1" >&2
+            usage >&2
             exit 1
             ;;
     esac
@@ -76,43 +95,21 @@ while [ -L "$script_path" ]; do
         *) script_path="$(dirname "$script_path")/$link_target" ;;
     esac
 done
-# shellcheck source=cleanmac-lib.sh
-source "$(dirname "$script_path")/cleanmac-lib.sh"
+# shellcheck source=../lib.sh
+source "$(dirname "$script_path")/../lib.sh"
 
-require_macos
+require_os Darwin
 
-# Usage: clean_chromium <display name> <process name> <profile root> <cache dir>
-clean_chromium() {
-    local name=$1 proc=$2 root=$3 cache=$4 profile
-    if [ ! -d "$root" ]; then
-        return 0
-    fi
-    if app_running "$name" "$proc"; then
-        return 0
-    fi
-    echo "Cleaning $name..."
-    for profile in "$root"/Default "$root"/Profile\ *; do
-        if [ ! -d "$profile" ]; then
-            continue
-        fi
-        remove_path "$profile"/History* \
-                    "$profile"/Cookies* \
-                    "$profile"/Network/Cookies* \
-                    "$profile"/Top\ Sites* \
-                    "$profile"/Visited\ Links \
-                    "$profile"/Network\ Action\ Predictor* \
-                    "$profile"/Shortcuts* \
-                    "$profile"/Favicons* \
-                    "$profile"/Sessions \
-                    "$profile"/Cache \
-                    "$profile"/Code\ Cache \
-                    "$profile"/GPUCache \
-                    "$profile"/Service\ Worker
-    done
-    remove_path "$cache"
-}
+selected="caches, temp files, logs, clipboard, local snapshots"
+if [ "$HISTORY" = true ]; then selected="$selected, history"; fi
+if [ "$BROWSERS" = true ]; then selected="$selected, browser data"; fi
+if [ "$TRASH" = true ]; then selected="$selected, Trash"; fi
+confirm "This permanently deletes: $selected. Continue?"
 
 start_run
+
+# Files a running app has just written are left alone.
+RECENT=(-mmin +10)
 
 # ---------------------------------------------------------------------------
 # Always: traces that daily work does not depend on
@@ -120,19 +117,21 @@ start_run
 echo "Starting privacy cleanup..."
 
 echo "Clearing user caches and logs..."
-find_clean "$LIB/Caches" -type f
-find_clean "$LIB/Logs" -type f
+clean_tree "$LIB/Caches" "${RECENT[@]}"
+clean_tree "$LIB/Logs" "${RECENT[@]}"
 
 echo "Clearing per-user temp and cache folders..."
 # Regular files only, so sockets of running apps survive.
 user_tmp=$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)
 user_cache=$(getconf DARWIN_USER_CACHE_DIR 2>/dev/null || true)
-if [ -n "$user_tmp" ]; then
-    find_clean "${user_tmp%/}" -type f
-fi
-if [ -n "$user_cache" ]; then
-    find_clean "${user_cache%/}" -type f
-fi
+for user_dir in "$user_tmp" "$user_cache"; do
+    # Both live below /var/folders; anything else is not touched.
+    case $user_dir in
+        /var/folders/?*/?*)
+            clean_tree "${user_dir%/}" "${RECENT[@]}"
+            ;;
+    esac
+done
 
 echo "Resetting QuickLook thumbnail cache..."
 run_cmd qlmanage -r cache
@@ -144,18 +143,18 @@ if [ -f "$quarantine_db" ]; then
 fi
 
 echo "Clearing system logs, crash reports and core dumps..."
-find_clean --sudo /Library/Logs/DiagnosticReports -type f
-find_clean --sudo /private/var/log -type f \( -name "*.gz" -o -name "*.bz2" -o -name "*.[0-9]" \)
+find_clean --root /Library/Logs/DiagnosticReports -type f
+find_clean --root /private/var/log -type f \( -name "*.gz" -o -name "*.bz2" -o -name "*.[0-9]" \)
 remove_path "$APP_SUPPORT"/CrashReporter/*
-remove_path --sudo /cores/*
-run_cmd sudo log erase --all
+remove_path --root /cores/*
+run_root log erase --all
 
 echo "Clearing print job copies (this also cancels pending print jobs)..."
-run_cmd sudo cancel -a -x
+run_root cancel -a -x
 
 echo "Flushing DNS cache..."
-run_cmd sudo dscacheutil -flushcache
-run_cmd sudo killall -HUP mDNSResponder
+run_root dscacheutil -flushcache
+run_root killall -HUP mDNSResponder
 
 echo "Clearing clipboard..."
 run_cmd pbcopy </dev/null
@@ -184,13 +183,16 @@ if [ "$HISTORY" = true ]; then
 
     echo "Removing shell and REPL history..."
     zsh_dir="${ZDOTDIR:-$HOME}"
-    remove_path "$zsh_dir/.zsh_history" "$zsh_dir/.zsh_sessions" \
+    remove_path "${HISTFILE:-}" "$(zsh_histfile)" \
+                "$zsh_dir/.zsh_history" "$zsh_dir/.zsh_sessions" \
+                "$zsh_dir/.zhistory" "$zsh_dir/.histfile" \
                 "$HOME/.bash_history" "$HOME/.bash_sessions" \
+                "$HOME/.local/share/fish/fish_history" \
                 "$HOME/.lesshst" "$HOME/.viminfo" \
+                "$HOME/.local/state/nvim/shada" "$HOME/.local/share/nvim/shada" \
                 "$HOME/.python_history" "$HOME/.node_repl_history" \
                 "$HOME/.psql_history" "$HOME/.mysql_history" \
                 "$HOME/.sqlite_history" "$HOME/.wget-hsts"
-    echo "Note: shells that are still open write their history back when they exit."
 
     # Only the Recent* lists: the same folder also holds Finder sidebar
     # favourites and tags, which must stay.
@@ -208,16 +210,18 @@ if [ "$HISTORY" = true ]; then
     remove_path "$LIB/Saved Application State"/*
 
     echo "Clearing Notification Center history..."
-    user_dir=$(getconf DARWIN_USER_DIR 2>/dev/null || true)
-    if [ -n "$user_dir" ]; then
-        remove_path "${user_dir%/}"/com.apple.notificationcenter/db2/db*
-    fi
+    notification_dir=$(getconf DARWIN_USER_DIR 2>/dev/null || true)
+    case $notification_dir in
+        /var/folders/?*/?*)
+            remove_path "${notification_dir%/}"/com.apple.notificationcenter/db2/db*
+            ;;
+    esac
     remove_path "$LIB/Group Containers/group.com.apple.usernoted"/db2/db*
     run_cmd killall usernoted
 fi
 
 # ---------------------------------------------------------------------------
-# --browsers: history, cookies, sessions and caches
+# --browsers: history, cookies, site storage, sessions and caches
 # ---------------------------------------------------------------------------
 if [ "$BROWSERS" = true ]; then
     echo -e "\nBrowser cleanup..."
@@ -232,12 +236,15 @@ if [ "$BROWSERS" = true ]; then
                     "$LIB/Safari/TopSites.plist" \
                     "$LIB/Safari/Favicon Cache" \
                     "$LIB/Safari/Touch Icons Cache" \
+                    "$LIB/Safari/LocalStorage" \
+                    "$LIB/Safari/Databases" \
                     "$LIB/Caches/com.apple.Safari" \
                     "$LIB/Cookies/Cookies.binarycookies" \
                     "$LIB/WebKit/com.apple.Safari" \
                     "$LIB"/HTTPStorages/com.apple.Safari* \
                     "$safari_data"/Caches/* \
                     "$safari_data"/Cookies/* \
+                    "$safari_data"/HTTPStorages/* \
                     "$safari_data/WebKit/WebsiteData"
     fi
 
@@ -252,34 +259,31 @@ if [ "$BROWSERS" = true ]; then
     clean_chromium "Vivaldi" "Vivaldi" \
         "$APP_SUPPORT/Vivaldi" "$LIB/Caches/Vivaldi"
 
-    if [ -d "$APP_SUPPORT/Firefox/Profiles" ] && ! app_running "Firefox" "firefox"; then
-        echo "Cleaning Firefox..."
-        for profile in "$APP_SUPPORT"/Firefox/Profiles/*; do
-            if [ ! -d "$profile" ]; then
-                continue
-            fi
-            # places.sqlite holds bookmarks as well as history, so the history
-            # rows are deleted instead of the file.
-            if [ -f "$profile/places.sqlite" ]; then
-                run_cmd sqlite3 "$profile/places.sqlite" \
-                    'DELETE FROM moz_historyvisits; DELETE FROM moz_inputhistory; DELETE FROM moz_places WHERE id NOT IN (SELECT fk FROM moz_bookmarks WHERE fk IS NOT NULL); VACUUM;'
-            fi
-            remove_path "$profile"/cookies.sqlite* \
-                        "$profile"/favicons.sqlite* \
-                        "$profile/formhistory.sqlite" \
-                        "$profile"/sessionstore* \
-                        "$profile/cache2"
-        done
-        remove_path "$LIB/Caches/Firefox"
-    fi
+    clean_firefox "Firefox" "firefox" \
+        "$APP_SUPPORT/Firefox/Profiles" "$LIB/Caches/Firefox"
+    clean_firefox "LibreWolf" "librewolf" \
+        "$APP_SUPPORT/librewolf/Profiles" "$LIB/Caches/librewolf"
+    clean_firefox "Zen" "zen" \
+        "$APP_SUPPORT/zen/Profiles" "$LIB/Caches/zen"
+fi
+
+# ---------------------------------------------------------------------------
+# --trash: empty the Trash completely
+# ---------------------------------------------------------------------------
+if [ "$TRASH" = true ]; then
+    echo -e "\nEmptying Trash..."
+    empty_dir "$HOME/.Trash"
+    for volume_trash in /Volumes/*/.Trashes/"$(id -u)"; do
+        empty_dir "$volume_trash"
+    done
 fi
 
 # Deleted files stay recoverable from local Time Machine snapshots until the
 # snapshots are gone. This runs last on purpose.
-if command -v tmutil >/dev/null 2>&1; then
+if have tmutil; then
     echo -e "\nDeleting local Time Machine snapshots..."
     for snapshot in $(tmutil listlocalsnapshotdates / 2>/dev/null | grep -E '^[0-9]{4}-' || true); do
-        run_cmd sudo tmutil deletelocalsnapshots "$snapshot"
+        run_root tmutil deletelocalsnapshots "$snapshot"
     done
 fi
 
@@ -289,9 +293,19 @@ else
     echo -e "\nPrivacy cleanup complete!"
 fi
 
+# Things the script cannot fix, only point out.
+if [ "$HISTORY" = true ]; then
+    echo "Note: every shell that is still open, this one included, writes its history"
+    echo "      back when it closes. Close each with:  unset HISTFILE; exit"
+fi
+
+if [ "$TRASH" != true ]; then
+    echo "Note: the Trash was not emptied (use --trash)."
+fi
+
 note_full_disk_access
 
 if ! fdesetup status 2>/dev/null | grep -q "FileVault is On"; then
-    echo "Warning: FileVault is not on. Deleted files cannot be securely erased on"
-    echo "         an SSD; only disk encryption keeps them unreadable."
+    echo "Note: FileVault is not on. Without disk encryption, deleted files cannot be"
+    echo "      made unreadable on an SSD, and swap or sleep images can hold copies."
 fi

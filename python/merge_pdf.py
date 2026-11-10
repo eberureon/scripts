@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from pypdf import PdfWriter
@@ -34,14 +35,14 @@ def main() -> int:
 
     missing = [path for path in input_paths if not path.is_file()]
     if missing:
-        print("Missing input file(s):")
+        print("Missing input file(s):", file=sys.stderr)
         for path in missing:
-            print(f"- {path}")
+            print(f"- {path}", file=sys.stderr)
         return 1
 
     if output_path.exists() and not args.force:
-        print(f"Output file already exists: {output_path}")
-        print("Use --force to overwrite.")
+        print(f"Output file already exists: {output_path}", file=sys.stderr)
+        print("Use --force to overwrite.", file=sys.stderr)
         return 1
 
     writer = PdfWriter()

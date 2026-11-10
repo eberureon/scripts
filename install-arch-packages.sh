@@ -3,12 +3,10 @@
 #
 # This script automates the installation of a list of official and AUR packages on Arch Linux.
 # It first installs the 'yay' AUR helper if it's not already present, then proceeds to
-# install all other specified packages.
+# install all other specified packages and links the dotfiles.
 #
-# To run this script, save it as 'install-packages.sh', make it executable, and run it
-# with sudo:
-# chmod +x install-packages.sh
-# sudo ./install-packages.sh
+# Run it with sudo from your normal user account:
+# sudo bash install-arch-packages.sh
 
 set -e # Exit immediately if a command exits with a non-zero status.
 
@@ -19,6 +17,15 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
+# AUR packages must be built by a normal user: makepkg refuses to run as root.
+run_user="${SUDO_USER:-}"
+if [ -z "$run_user" ] || [ "$run_user" = "root" ]; then
+  echo "Run this script with 'sudo' from your normal user account, not from a root shell."
+  exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "Starting Arch Linux package installation script..."
 echo "This script will install a mix of official and AUR packages."
 echo "You may be prompted for your password multiple times during the process."
@@ -27,6 +34,7 @@ echo ""
 # --- PACKAGE DEFINITIONS ---
 # List of packages from the official Arch Linux repositories
 pacman_packages=(
+  biome
   bitwarden
   bluedevil
   chromium
@@ -34,6 +42,7 @@ pacman_packages=(
   docker-compose
   eza
   fastfetch
+  ghostty
   git
   go
   jdk-openjdk
@@ -44,26 +53,28 @@ pacman_packages=(
   noto-fonts-emoji
   noto-fonts-extra
   npm
-  steam
   ttf-opensans
+  uv
   vim
   zoxide
   zsh
   zsh-completions
 )
 
+# Packages from the multilib repository, which is disabled by default
+multilib_packages=(
+  steam
+)
+
 # List of packages from the Arch User Repository (AUR)
 aur_packages=(
   # ausweisapp2
-  biome
-  ghostty
   intellij-idea-ultimate-edition
   mullvad-vpn-bin
   postman-bin
   spotify
   ttf-meslo-nerd-font-powerlevel10k
   ttf-nerd-fonts-symbols
-  uv
   visual-studio-code-bin
   yubico-authenticator-bin
   zen-browser-bin
@@ -76,14 +87,15 @@ install_yay() {
   if ! command -v yay &>/dev/null; then
     echo "yay is not installed. Installing yay from AUR..."
     # Install dependencies for building yay
-    pacman -S --noconfirm base-devel git
+    pacman -S --needed --noconfirm base-devel git
 
-    # Create a temporary directory to build yay
-    temp_dir=$(mktemp -d)
-    git clone https://aur.archlinux.org/yay.git "$temp_dir"
+    # Build in a temporary directory that belongs to the normal user
+    temp_dir=$(sudo -u "$run_user" mktemp -d)
+    sudo -u "$run_user" git clone https://aur.archlinux.org/yay.git "$temp_dir"
 
-    # Change to the directory and build/install the package
-    (cd "$temp_dir" && makepkg -si --noconfirm)
+    # Build and install the package as the normal user; makepkg asks for
+    # the sudo password itself when it installs.
+    (cd "$temp_dir" && sudo -u "$run_user" makepkg -si --noconfirm)
 
     # Clean up the temporary directory
     rm -rf "$temp_dir"
@@ -97,9 +109,16 @@ install_yay() {
 echo "--- Updating system packages ---"
 pacman -Syu --noconfirm
 
-# 2. Install official packages
+# 2. Install official packages (--needed skips what is already up to date)
 echo "--- Installing official packages with pacman ---"
-pacman -S --noconfirm "${pacman_packages[@]}"
+pacman -S --needed --noconfirm "${pacman_packages[@]}"
+
+if pacman -Sl multilib &>/dev/null; then
+  pacman -S --needed --noconfirm "${multilib_packages[@]}"
+else
+  echo "Warning: the multilib repository is not enabled, skipping: ${multilib_packages[*]}"
+  echo "         Enable [multilib] in /etc/pacman.conf and run this script again."
+fi
 
 # 3. Install yay (if not already installed)
 echo "--- Checking for and installing yay ---"
@@ -107,13 +126,11 @@ install_yay
 
 # 4. Install AUR packages with yay
 echo "--- Installing AUR packages with yay ---"
-# Note: yay will prompt for sudo when needed, so we don't need 'sudo' here.
-# We run yay as the user that ran the script, not as root.
-# The `sudo -u "$(logname)"` part ensures yay runs as the logged-in user.
+# yay must not run as root; it prompts for sudo itself when needed.
 # The `--noconfirm` flag may not always work perfectly with yay for complex builds.
 # You might need to remove it if a specific package requires manual interaction.
 if [ ${#aur_packages[@]} -gt 0 ]; then
-  sudo -u "$(logname)" yay -S --noconfirm "${aur_packages[@]}"
+  sudo -u "$run_user" yay -S --needed --noconfirm "${aur_packages[@]}"
 else
   echo "No AUR packages to install."
 fi
@@ -122,45 +139,11 @@ fi
 echo "--- Installation complete! ---"
 echo ""
 
-# --- Create symlink ---
-user_home=$(getent passwd "$(logname)" | cut -d: -f6)
-# Define an array of source paths and a corresponding array of target links.
-# The order must match.
-source_paths=(
-  "$user_home/Documents/workspace/dotfiles/linux/.config/ghostty",
-  "$user_home/Documents/workspace/dotfiles/.config/lazyvim"
-)
-target_links=(
-  "$user_home/.config/ghostty",
-  "$user_home/.config/nvim"
-)
-
+# --- Create symlinks ---
+# link-dotfiles.sh backs up existing files instead of overwriting them.
 echo "--- Creating symlinks for dotfiles ---"
-
-# Loop through the arrays to create symlinks
-for i in "${!source_paths[@]}"; do
-  source_path="${source_paths[$i]}"
-  target_link="${target_links[$i]}"
-
-  echo "Creating symlink: $target_link -> $source_path"
-
-  # Check if the source directory exists
-  if [ -d "$source_path" ]; then
-    # Create the parent directory for the symlink if it doesn't exist
-    sudo -u "$(logname)" mkdir -p "$(dirname "$target_link")"
-
-    # Check if the target symlink already exists and remove it if it does
-    if [ -L "$target_link" ]; then
-      sudo -u "$(logname)" rm "$target_link"
-    fi
-
-    # Create the symbolic link as the logged-in user
-    sudo -u "$(logname)" ln -s "$source_path" "$target_link"
-    echo "Symlink created successfully."
-  else
-    echo "Warning: Source directory '$source_path' does not exist. Skipping symlink creation."
-  fi
-done
+sudo -H -u "$run_user" bash "$script_dir/link-dotfiles.sh" \
+  || echo "Warning: not all dotfiles could be linked, see the messages above."
 echo ""
 
 echo "Additional steps you may want to take:"

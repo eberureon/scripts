@@ -8,7 +8,9 @@ set -e
 
 # Default configuration
 DRY_RUN=false
+VERBOSE=false
 AUTOREMOVE=false
+DOCKER=false
 
 usage() {
     cat <<EOF
@@ -20,9 +22,13 @@ Run it as your normal user; it asks for root itself where needed.
 Options:
     -h, --help          Show this help message
     -d, --dry-run       Show what would be deleted without deleting
+    -v, --verbose       List every deleted file instead of a count
     --autoremove        Also uninstall packages that were pulled in as
                         dependencies and are no longer required
                         (pacman, apt, dnf/yum, xbps)
+    --docker            Also prune Docker and Podman: stopped containers,
+                        unused networks, dangling images and build cache.
+                        Data inside stopped containers is lost.
 
 Arguments:
     DAYS                Number of days of cache to keep (default: 7)
@@ -38,22 +44,26 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         -d|--dry-run)
             DRY_RUN=true
-            shift
+            ;;
+        -v|--verbose)
+            VERBOSE=true
             ;;
         --autoremove)
             AUTOREMOVE=true
-            shift
+            ;;
+        --docker)
+            DOCKER=true
             ;;
         -*)
-            echo "Error: unknown option $1"
-            usage
+            echo "Error: unknown option $1" >&2
+            usage >&2
             exit 1
             ;;
         *)
             DAYS_TO_KEEP=$1
-            shift
             ;;
     esac
+    shift
 done
 
 # Default to 7 days if no argument provided
@@ -61,7 +71,7 @@ DAYS_TO_KEEP=${DAYS_TO_KEEP:-7}
 
 # Check that the number of days to keep is a non-negative integer
 if ! [[ $DAYS_TO_KEEP =~ ^(0|[1-9][0-9]*)$ ]]; then
-    echo "Error: DAYS must be a non-negative integer."
+    echo "Error: DAYS must be a non-negative integer." >&2
     exit 1
 fi
 
@@ -75,10 +85,10 @@ while [ -L "$script_path" ]; do
         *) script_path="$(dirname "$script_path")/$link_target" ;;
     esac
 done
-# shellcheck source=cleanlinux-lib.sh
-source "$(dirname "$script_path")/cleanlinux-lib.sh"
+# shellcheck source=../lib.sh
+source "$(dirname "$script_path")/../lib.sh"
 
-require_linux
+require_os Linux
 
 # Remove trashed items that were put into the given trash more than
 # DAYS_TO_KEEP days ago. The age is taken from the .trashinfo file, so a
@@ -156,6 +166,7 @@ if have pacman; then
     if [ "$AUTOREMOVE" = true ]; then
         orphans=$(pacman -Qdtq 2>/dev/null || true)
         if [ -n "$orphans" ]; then
+            # shellcheck disable=SC2086
             echo "Orphaned packages:" $orphans
             # shellcheck disable=SC2086
             run_root pacman -Rns --noconfirm $orphans
@@ -250,14 +261,13 @@ elif have pip3; then
     run_cmd pip3 cache purge
 fi
 
-# Docker cleanup
-if have docker; then
-    echo "Checking Docker context..."
-    if ! current_context=$(docker context show 2>/dev/null); then
-        echo "Unable to determine Docker context; assuming local and cleaning."
-        run_cmd docker system prune -f
-    else
-        if endpoint=$(docker context inspect "$current_context" --format '{{.Endpoints.docker.Host}}' 2>/dev/null); then
+# Docker and Podman, only on request: pruning removes stopped containers.
+if [ "$DOCKER" = true ]; then
+    if have docker; then
+        echo "Checking Docker context..."
+        if ! current_context=$(docker context show 2>/dev/null); then
+            echo "Unable to determine Docker context; skipping cleanup to avoid a remote connection."
+        elif endpoint=$(docker context inspect "$current_context" --format '{{.Endpoints.docker.Host}}' 2>/dev/null); then
             if [[ "$endpoint" == unix://* ]]; then
                 echo "Cleaning unused Docker data..."
                 run_cmd docker system prune -f
@@ -265,14 +275,14 @@ if have docker; then
                 echo "Docker is using a remote context ($endpoint), skipping cleanup."
             fi
         else
-            echo "Unable to inspect Docker context; skipping cleanup to avoid potential remote connection."
+            echo "Unable to inspect Docker context; skipping cleanup to avoid a remote connection."
         fi
     fi
-fi
 
-if have podman; then
-    echo "Cleaning unused Podman data..."
-    run_cmd podman system prune -f
+    if have podman; then
+        echo "Cleaning unused Podman data..."
+        run_cmd podman system prune -f
+    fi
 fi
 
 if [ "$DRY_RUN" = true ]; then
